@@ -1,10 +1,108 @@
 """Recommendation Engine — measured lift + price + availability → ranked actions."""
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from src import analytics, db, theme, ui
+
+MCP_TOOL_MANIFEST = """{
+  "tools": [
+    {
+      "name": "propose_ad_load_change",
+      "description": "Draft a proposed ad-load change for a session cohort. Does not apply the change -- creates a reviewable proposal only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cohort_name": {"type": "string"},
+          "action": {"type": "string", "enum": ["SPIN_UP", "SPIN_DOWN"]},
+          "load_multiplier": {"type": "number", "minimum": 0.5, "maximum": 1.5},
+          "rationale": {"type": "string"}
+        },
+        "required": ["cohort_name", "action", "load_multiplier", "rationale"]
+      }
+    },
+    {
+      "name": "request_human_approval",
+      "description": "Escalate a proposed change to a human approver before it can be applied.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "proposal_ref": {"type": "string"},
+          "reason": {"type": "string"},
+          "approver_role": {"type": "string", "enum": ["ads_ops_lead", "measurement_lead", "finance"]}
+        },
+        "required": ["proposal_ref", "reason"]
+      }
+    },
+    {
+      "name": "open_ops_ticket",
+      "description": "Open a tracked ticket documenting the decision and its rationale.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "priority": {"type": "string", "enum": ["P1", "P2", "P3"]}
+        },
+        "required": ["title", "description"]
+      }
+    },
+    {
+      "name": "notify_stakeholders",
+      "description": "Post a summary to a Slack channel or distribution list.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "channel": {"type": "string"},
+          "message": {"type": "string"}
+        },
+        "required": ["channel", "message"]
+      }
+    }
+  ]
+}"""
+
+
+def build_agent_handoff(rows: pd.DataFrame) -> str:
+    """A prompt an MCP-connected ops agent could act on, generated from *today's*
+    live recommendations rather than a static example. Escalation flags are
+    computed here, not left for the agent to infer, since a deterministic
+    guardrail belongs in code -- the agent's job is drafting and judgment calls
+    on top of it, not deciding what counts as risky."""
+    live = rows[rows.action != "HOLD"]
+    lines = [
+        "SYSTEM: You are the Ads Ops execution agent for Netflix's ad platform.",
+        "Available MCP tools: propose_ad_load_change, request_human_approval, "
+        "open_ops_ticket, notify_stakeholders.",
+        "Never invent a cohort, multiplier, or rationale that isn't given to you below.",
+        "",
+        "GUARDRAILS:",
+        "- Never change ad load directly -- always `propose_ad_load_change` first; "
+        "it drafts, it doesn't apply.",
+        "- If needs_human_approval=true below, call `request_human_approval` before "
+        "proposing anything for that cohort.",
+        "- Quote the `rationale` field verbatim in the ticket -- do not paraphrase away "
+        "the eCPM/fill-rate evidence behind it.",
+        "- Do not act on HOLD rows; they mean 'monitor', not 'no action needed'.",
+        "",
+        f"TASK: For each of the {len(live)} actionable cohorts below, call "
+        "`propose_ad_load_change` (plus `request_human_approval` where flagged), then "
+        "`open_ops_ticket` once summarizing all proposals, then `notify_stakeholders`.",
+        "",
+        "RECOMMENDATION ENGINE OUTPUT:",
+    ]
+    for r in live.itertuples():
+        mult = 1.15 if r.action == "SPIN UP" else 0.85
+        needs_approval = r.action == "SPIN DOWN" or (r.action == "SPIN UP" and r.attention_index < 0.5)
+        lines.append(
+            f'- action={r.action.replace(" ", "_")} cohort="{r.cohort_name}" '
+            f"fill_rate={r.fill_rate:.0%} avg_ecpm=${r.avg_ecpm:.2f} "
+            f"unfilled_slots={r.unfilled_slots:,.0f} suggested_multiplier={mult:.2f} "
+            f"needs_human_approval={str(needs_approval).lower()}")
+        lines.append(f"  rationale: {r.rationale}")
+    return "\n".join(lines)
 
 ui.page_header("Recommendation Engine",
                "Turns the measurement outputs into decisions: which cohorts an advertiser "
@@ -132,5 +230,28 @@ for r in actions.itertuples():
         f"<span style='color:#c3c2b7; font-size:0.88rem;'>{r.rationale}</span></div>",
         unsafe_allow_html=True)
 st.caption("Try any of these levers live in the Cohort Control Console →")
+
+st.divider()
+st.subheader("5 · Make it agentic: hand off to an MCP-connected ops agent")
+st.markdown(
+    "Section 4's output is already shaped like a set of tool calls — a cohort, an action, "
+    "a magnitude, and a rationale — which is what makes it plausible to hand to an "
+    "autonomous agent instead of a human clicking through a dashboard. Below is an "
+    "illustrative MCP tool manifest a 'Netflix AdOps' server might expose, and the exact "
+    "prompt this page would generate from **today's live recommendations** to brief that "
+    "agent — guardrails included.")
+
+with st.expander("Illustrative MCP tool manifest (what the agent could call)"):
+    st.code(MCP_TOOL_MANIFEST, language="json")
+    st.caption("Illustrative only — no MCP server is actually connected here. This is the "
+               "shape a real AdOps tool server would need to expose for an agent to act on "
+               "these recommendations directly, rather than a human reading the cards above.")
+
+actions_enriched = actions.merge(inv[["cohort_name", "attention_index"]], on="cohort_name")
+st.code(build_agent_handoff(actions_enriched), language="text")
+st.caption("Generated live from the Section 4 actions — not a static example; rerun the page "
+           "with different data and this prompt changes with it. Point it at a real MCP "
+           "server in place of the manifest above and this becomes an actual agent brief "
+           "instead of a demonstration of one.")
 
 db.show_sql("recommend_cells", "SQL: cohort × category cells behind the scores")
