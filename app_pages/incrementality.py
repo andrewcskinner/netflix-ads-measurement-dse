@@ -54,37 +54,60 @@ options = well_powered.sort_values("n_treated", ascending=False)
 sel = st.selectbox("Campaign", options.campaign_name, index=0)
 row = options[options.campaign_name == sel].iloc[0]
 
-c1, c2 = st.columns([1, 1.3])
-with c1:
-    st.metric("Measured lift", f"{row.lift:+.1%}",
-              f"95% CI [{row.lo:+.1%}, {row.hi:+.1%}]", delta_color="off")
-    verdict = "Statistically significant (α=0.05)" if row.significant else "Not statistically significant"
-    st.markdown(f"**{verdict}** — p = {row.p:.3f}")
-    st.markdown(
-        f"- Treated accounts: **{row.n_treated:,.0f}** (conv rate {row.rt:.2%})\n"
-        f"- Holdout accounts: **{row.n_holdout:,.0f}** (conv rate {row.rh:.2%})\n"
-        f"- Est. incremental conversions: **{max(row.incremental_conversions,0):,.0f}**\n"
-        f"- Avg frequency: **{row.avg_frequency:.1f}** exposures/account\n"
-        f"- Objective: {row.objective} · Category: {row.category}")
-with c2:
-    samples = analytics.bayes_lift_samples(row.conv_treated, row.n_treated,
-                                           row.conv_holdout, row.n_holdout)
-    p_pos = (samples > 0).mean()
-    hist, edges = np.histogram(samples, bins=60)
-    centers = (edges[:-1] + edges[1:]) / 2
-    fig = go.Figure(go.Bar(
-        x=centers, y=hist, width=(edges[1] - edges[0]) * 0.92,
-        marker=dict(color=[theme.CAT[0] if c > 0 else theme.MUTED for c in centers],
-                    cornerradius=2),
-        hovertemplate="Lift %{x:+.1%}<extra></extra>"))
-    fig.add_vline(x=0, line=dict(color=theme.BASELINE, width=1))
-    lo_b, hi_b = np.percentile(samples, [2.5, 97.5])
-    fig.update_layout(
-        title=f"Bayesian posterior of lift (Jeffreys priors) — P(lift > 0) = {p_pos:.1%}, "
-              f"95% credible [{lo_b:+.1%}, {hi_b:+.1%}]",
-        height=330, xaxis=dict(tickformat="+.0%"), yaxis=dict(visible=False),
-        showlegend=False, bargap=0)
-    st.plotly_chart(fig, use_container_width=True)
+samples = analytics.bayes_lift_samples(row.conv_treated, row.n_treated,
+                                       row.conv_holdout, row.n_holdout)
+p_pos = (samples > 0).mean()
+lo_b, hi_b = np.percentile(samples, [2.5, 97.5])
+median_b = np.median(samples)
+
+label, color, icon = theme.status_for_lift_confidence(p_pos)
+st.markdown(
+    f"<div style='border-left:4px solid {color}; padding:0.9rem 1.15rem; margin:0.3rem 0 1.1rem;"
+    f"background:#1a1a19; border-radius:6px;'>"
+    f"<div style='color:{color}; font-weight:800; font-size:1.1rem;'>{icon} {label}</div>"
+    f"<div style='color:#ffffff; font-size:1.02rem; margin-top:0.4rem; line-height:1.5;'>"
+    f"Out of 100 times we ran this exact test, about <b>{p_pos*100:.0f}</b> of them would show "
+    f"this campaign is truly driving more conversions — not just normal viewer behavior it "
+    f"would have shown anyway.</div>"
+    f"<div style='color:#c3c2b7; margin-top:0.3rem;'>"
+    f"Best guess: <b>{median_b:+.0%}</b> more conversions. Realistically, anywhere from "
+    f"<b>{lo_b:+.0%}</b> to <b>{hi_b:+.0%}</b>.</div>"
+    f"</div>", unsafe_allow_html=True)
+
+with st.expander("Statistical detail behind this verdict"):
+    c1, c2 = st.columns([1, 1.3])
+    with c1:
+        st.metric("Measured lift", f"{row.lift:+.1%}",
+                  f"95% CI [{row.lo:+.1%}, {row.hi:+.1%}]", delta_color="off")
+        verdict = "Statistically significant (α=0.05)" if row.significant else "Not statistically significant"
+        st.markdown(f"**{verdict}** — p = {row.p:.3f}")
+        st.markdown(
+            f"- Treated accounts: **{row.n_treated:,.0f}** (conv rate {row.rt:.2%})\n"
+            f"- Holdout accounts: **{row.n_holdout:,.0f}** (conv rate {row.rh:.2%})\n"
+            f"- Est. incremental conversions: **{max(row.incremental_conversions,0):,.0f}**\n"
+            f"- Avg frequency: **{row.avg_frequency:.1f}** exposures/account\n"
+            f"- Objective: {row.objective} · Category: {row.category}")
+    with c2:
+        hist, edges = np.histogram(samples, bins=60)
+        centers = (edges[:-1] + edges[1:]) / 2
+        fig = go.Figure(go.Bar(
+            x=centers, y=hist, width=(edges[1] - edges[0]) * 0.92,
+            marker=dict(color=[theme.STATUS["good"] if c > 0 else theme.MUTED for c in centers],
+                        cornerradius=2),
+            hovertemplate="Lift %{x:+.1%}<extra></extra>"))
+        fig.add_vline(x=0, line=dict(color=theme.BASELINE, width=1),
+                      annotation_text="No effect", annotation_position="top",
+                      annotation_font_color=theme.MUTED)
+        fig.update_layout(
+            title="Range of plausible lift estimates",
+            height=330, xaxis=dict(tickformat="+.0%"), yaxis=dict(visible=False),
+            showlegend=False, bargap=0)
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            f"Bayesian posterior distribution (Jeffreys priors) — P(true lift > 0) = "
+            f"{p_pos:.1%}, 95% credible interval [{lo_b:+.1%}, {hi_b:+.1%}]. Same underlying "
+            f"data as the p-value at left, expressed as a distribution of plausible effect "
+            f"sizes instead of a single significance test — the source of the verdict above.")
 
 st.divider()
 st.subheader("Frequency response (elasticity)")

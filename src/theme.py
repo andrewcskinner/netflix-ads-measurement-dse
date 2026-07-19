@@ -58,3 +58,15 @@ def status_for_fill(fill: float) -> tuple[str, str, str]:
     if fill >= 0.60:
         return "Soft", STATUS["warning"], "◆"
     return "Cold", STATUS["serious"], "▼"
+
+
+def status_for_lift_confidence(p_pos: float) -> tuple[str, str, str]:
+    """(label, color, icon) for P(true lift > 0) — the plain-English verdict tier
+    for a campaign readout, independent of the underlying frequentist/Bayesian frame."""
+    if p_pos >= 0.95:
+        return "Working", STATUS["good"], "▲"
+    if p_pos >= 0.70:
+        return "Probably working", STATUS["warning"], "◆"
+    if p_pos > 0.30:
+        return "Inconclusive", MUTED, "●"
+    return "Likely not working", STATUS["serious"], "▼"
