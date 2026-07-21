@@ -29,6 +29,7 @@ pages = st.navigation([
     st.Page("app_pages/incrementality.py", title="Incrementality & Elasticity", icon="🧪"),
     st.Page("app_pages/ab_testing.py", title="A/B Testing", icon="⚖️"),
     st.Page("app_pages/recommendations.py", title="Recommendation Engine", icon="🧭"),
+    st.Page("app_pages/agent.py", title="AI Analyst", icon="🤖"),
     st.Page("app_pages/cohort_console.py", title="Cohort Control Console", icon="🎚️"),
     st.Page("app_pages/data_model.py", title="Data Model & Methodology", icon="🗄️"),
 ])
