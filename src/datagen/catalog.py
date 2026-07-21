@@ -61,7 +61,32 @@ ADVERTISERS = [
     # Marketplace / DTC
     ("Uber", "Marketplace"), ("DoorDash", "Marketplace"), ("Instacart", "Marketplace"),
     ("Peloton", "Marketplace"), ("Squarespace", "Marketplace"), ("Duolingo", "Marketplace"),
-][:100]
+]
+
+# The active roster: a curated 20-advertiser spread across ~12 categories, each
+# with a real famous-creative name. Concentrating the ~1M placements into fewer
+# advertisers gives every campaign enough volume for tight confidence intervals,
+# while the category breadth keeps every per-category analysis (creative-type
+# lift, frequency response, cohort affinity) populated. Swap this list to
+# re-slice the roster; the full 100-brand catalog above stays available.
+CURATED_ADVERTISERS = [
+    "GEICO", "Progressive",            # Insurance
+    "McDonald's", "Taco Bell",         # QSR
+    "Toyota", "BMW",                   # Auto
+    "Apple", "Samsung",                # Tech
+    "Coca-Cola", "Red Bull",           # Beverage
+    "Walmart", "Target",               # Retail
+    "Capital One", "American Express",  # Finance
+    "T-Mobile",                        # Telecom
+    "PlayStation", "DraftKings",       # Gaming
+    "Spotify",                         # Entertainment
+    "Nike",                            # Apparel
+    "DoorDash",                        # Marketplace
+]
+
+_by_name = {name: (name, category) for name, category in ADVERTISERS}
+# Reduce ADVERTISERS to the curated roster (raises KeyError on any typo above).
+ADVERTISERS = [_by_name[name] for name in CURATED_ADVERTISERS]
 
 # Recognizable real campaign concepts, used as flagship creative names.
 FAMOUS_CREATIVES = {

@@ -31,7 +31,7 @@ digraph G {
   node [shape=record, style=filled, fillcolor="#1a1a19", color="#383835",
         fontcolor="#c3c2b7", fontname="Helvetica", fontsize=11];
   edge [color="#898781", arrowsize=0.7];
-  advertiser [label="dim_advertiser|100 brands, category, tier"];
+  advertiser [label="dim_advertiser|20 brands, category, tier"];
   campaign   [label="dim_campaign|budget, objective, flight"];
   creative   [label="dim_creative|real-ish creative names"];
   ctype      [label="dim_creative_type|awareness · DR · CTLM"];
