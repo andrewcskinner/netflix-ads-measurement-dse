@@ -114,7 +114,7 @@ def execute(query: str) -> dict:
 
     payload = {"analysis": analysis.label, "parameters": result.bound_params,
                "headline": result.headline, "statistics": result.stats}
-    s_text = f"{result.headline} {result.takeaway}"
+    s_text = reg.fallback_summary(result)
     s_mode, s_err = "offline", None
     if use_llm:
         s = llm.summarize(payload)
@@ -157,14 +157,33 @@ if active_query:
 
     st.divider()
 
-    # ---- Stage 1
+    # ---- Stage 1 · the question
     stage_header(1, "User query")
     st.markdown(
         f"<div style='background:#1a1a19; border-radius:6px; padding:0.7rem 1rem; "
         f"color:#fff; font-size:1.05rem;'>“{r['query']}”</div>", unsafe_allow_html=True)
 
-    # ---- Stage 2
+    # ---- Stage 5 · lead with the answer, directly under the question
     st.write("")
+    stage_header(5, "Answer — plain-English summary")
+    st.markdown(mode_chip(r["summary_mode"]), unsafe_allow_html=True)
+    if r.get("summary_error"):
+        st.warning(f"LLM summary failed ({r['summary_error']}); used the templated readout.")
+    st.markdown(
+        f"<div style='border-left:4px solid {theme.ACCENT}; background:#1a1a19; "
+        f"padding:0.9rem 1.15rem; border-radius:6px; color:#fff; font-size:1.03rem; "
+        f"line-height:1.55;'>{r['summary']}</div>", unsafe_allow_html=True)
+    st.caption("Generated strictly from the Stage 4 numbers below — the summarizer is instructed "
+               "to use only those figures, never to invent or extrapolate.")
+
+    # ---- how the agent got there
+    st.divider()
+    st.markdown("<div style='color:#898781; font-weight:700; letter-spacing:0.4px; "
+                "font-size:0.82rem; text-transform:uppercase;'>How the agent produced this "
+                "— the codified pipeline</div>", unsafe_allow_html=True)
+    st.write("")
+
+    # ---- Stage 2
     stage_header(2, "Semantic layer → intent, analysis type, parameters")
     st.markdown(mode_chip(r["resolve_mode"]), unsafe_allow_html=True)
     if r.get("resolve_error"):
@@ -211,18 +230,6 @@ if active_query:
                      column_config=res.table_config)
     with st.expander("Full statistical result (the exact numbers handed to the summarizer)"):
         st.json(res.stats)
-
-    # ---- Stage 5
-    st.write("")
-    stage_header(5, "Plain-English summary")
-    st.markdown(mode_chip(r["summary_mode"]), unsafe_allow_html=True)
-    if r.get("summary_error"):
-        st.warning(f"LLM summary failed ({r['summary_error']}); used the templated readout.")
-    st.markdown(
-        f"<div style='border-left:4px solid {theme.ACCENT}; background:#1a1a19; "
-        f"padding:0.9rem 1.15rem; border-radius:6px; color:#fff; font-size:1.03rem; "
-        f"line-height:1.55;'>{r['summary']}</div>", unsafe_allow_html=True)
-    st.caption("Generated strictly from the Stage 4 numbers — the summarizer is instructed to "
-               "use only those figures, never to invent or extrapolate.")
+    st.caption("Stage 4's numbers are what the Stage 5 answer at the top was generated from.")
 else:
     st.info("Ask a question above, or click an example, to see the five-stage flow.")
