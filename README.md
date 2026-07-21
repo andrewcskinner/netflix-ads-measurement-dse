@@ -28,7 +28,7 @@ is simulated; no real Netflix, advertiser, or member data appears anywhere.
 ## Data model
 
 Nine warehouse tables built by a seeded generator (`src/datagen/generate.py`,
-seed 42, ~6s): `dim_advertiser` (100 real brands), `dim_campaign`,
+seed 42, ~6s): `dim_advertiser` (20 real brands across 12 categories), `dim_campaign`,
 `dim_creative` (+ `dim_creative_type`: awareness / direct response /
 click-to-learn-more), `dim_cohort` (12 cutesy-but-plausible session cohorts),
 `dim_account` (anonymized, household-linked — no PII), `fact_session` (220k),

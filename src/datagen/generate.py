@@ -76,8 +76,13 @@ def build(db_path: str, progress=None) -> None:
     note("Building advertisers, campaigns & creatives…")
     adv = pd.DataFrame(cat.ADVERTISERS, columns=["advertiser_name", "category"])
     adv["advertiser_id"] = np.arange(1, len(adv) + 1)
-    tier_draw = rng.permutation(len(adv))
-    adv["tier"] = np.select([tier_draw < 20, tier_draw < 55], ["AAA", "AA"], "A")
+    # Tier split ~20% AAA / ~35% AA / ~45% A, proportional to the roster size
+    # so it holds whether there are 20 advertisers or 100.
+    n_adv = len(adv)
+    tier_draw = rng.permutation(n_adv)
+    adv["tier"] = np.select(
+        [tier_draw < round(0.20 * n_adv), tier_draw < round(0.55 * n_adv)],
+        ["AAA", "AA"], "A")
 
     ctype = pd.DataFrame(cat.CREATIVE_TYPES, columns=["creative_type_id", "creative_type", "description", "cpm_mult"])
 
