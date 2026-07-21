@@ -20,6 +20,7 @@ is simulated; no real Netflix, advertiser, or member data appears anywhere.
 | **Elasticity** — incremental conversion rate by exposure frequency, fit to a saturating curve; half-saturation frequency drives budget advice | Incrementality & Elasticity |
 | **A/B testing** — 30 account-split creative tests, plus a meta-experiment quantifying how much last-touch attribution overstates vs holdout truth | A/B Testing |
 | **Recommendation engine** — inventory→advertiser matching, budget reallocation, creative-type guidance, platform spin-up/spin-down calls | Recommendation Engine |
+| **Codified AI-for-BI** — natural-language question → semantic layer routes to one of a fixed menu of approved analyses and selects only pre-validated parameters → vetted SQL/Python runs → LLM summarizes the numbers. The model never writes SQL. | AI Analyst |
 | **Spin up / spin down inventory per cohort** — a what-if console over a stated supply/demand equilibrium model | Cohort Control Console |
 | **Estimator auditability** — the simulator plants ground truth, so measured lift is scored against known truth (CI coverage, MAE) | Data Model & Methodology |
 
@@ -52,6 +53,14 @@ First boot generates the DuckDB warehouse (~20s), then everything is cached.
 out-of-band; to set your own, copy `.streamlit/secrets.toml.example` to
 `.streamlit/secrets.toml` (or paste into the Streamlit Cloud Secrets UI) with
 `AUTH_USERNAME` and `AUTH_PASSWORD_SHA256`.
+
+**AI Analyst (optional LLM):** the **AI Analyst** page uses OpenAI for the
+semantic-layer routing and the summary. Add `OPENAI_API_KEY` (and optionally
+`OPENAI_MODEL`, default `gpt-4o-mini`) to your secrets to enable it. Without a
+key the page still runs end-to-end on a deterministic keyword router and a
+templated summary, with a banner saying so — the approved analyses in between
+are identical either way. The LLM only picks an approved analysis and its
+parameters and writes prose; it never generates SQL or Python.
 
 ## Deploy (Streamlit Community Cloud)
 
