@@ -1,8 +1,10 @@
 """Hard username/password gate.
 
-Credentials are checked against Streamlit secrets (AUTH_USERNAME /
-AUTH_PASSWORD_SHA256). If no secrets are configured, the demo credentials
-ship as a SHA-256 hash — the plaintext password never appears in the repo.
+Credentials are read from Streamlit secrets (AUTH_USERNAME /
+AUTH_PASSWORD_SHA256). No password is baked into the repo: if
+AUTH_PASSWORD_SHA256 is not configured, every login attempt is rejected.
+Set the hash in .streamlit/secrets.toml (gitignored) locally, or in the
+Streamlit Cloud "Secrets" UI when deploying.
 """
 
 import hashlib
@@ -11,20 +13,29 @@ import hmac
 import streamlit as st
 
 _DEFAULT_USER = "netflix"
-# sha256 of the demo password (shared out-of-band).
-_DEFAULT_HASH = "43ef1ceaf98623b82420b5eabc1c9a5ffec119343d8e17c67260421c367dde5a"
 
 
-def _expected() -> tuple[str, str]:
+def _expected() -> tuple[str, str | None]:
+    """Return (username, password_sha256) from secrets.
+
+    The password hash is never stored in the repo. When it is absent the
+    hash is None and no credentials can match.
+    """
     try:
         return (st.secrets.get("AUTH_USERNAME", _DEFAULT_USER),
-                st.secrets.get("AUTH_PASSWORD_SHA256", _DEFAULT_HASH))
+                st.secrets.get("AUTH_PASSWORD_SHA256"))
     except Exception:
-        return _DEFAULT_USER, _DEFAULT_HASH
+        return _DEFAULT_USER, None
+
+
+def _is_configured() -> bool:
+    return bool(_expected()[1])
 
 
 def _check(user: str, password: str) -> bool:
     exp_user, exp_hash = _expected()
+    if not exp_hash:
+        return False
     got = hashlib.sha256(password.encode()).hexdigest()
     return hmac.compare_digest(user.strip().lower(), exp_user.lower()) and \
         hmac.compare_digest(got, exp_hash.lower())
@@ -46,6 +57,9 @@ def require_login() -> bool:
             user = st.text_input("Username", autocomplete="username")
             pw = st.text_input("Password", type="password", autocomplete="current-password")
             ok = st.form_submit_button("Sign in", use_container_width=True, type="primary")
+        if not _is_configured():
+            st.warning("Login is not configured. Set AUTH_PASSWORD_SHA256 in "
+                       "Streamlit secrets to enable sign-in.")
         if ok:
             if _check(user, pw):
                 st.session_state["authed"] = True
