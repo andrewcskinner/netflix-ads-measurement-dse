@@ -88,8 +88,11 @@ def resolve_intent(query: str, tool_schema: dict) -> dict:
         "analysis by calling `run_measurement_analysis`. You may only choose from "
         "the enumerated analysis_type values and the enumerated parameter values in "
         "the schema. You never write SQL, Python, or free-form values. If a "
-        "parameter is not relevant to the chosen analysis, omit it. Restate the "
-        "user's intent in one plain sentence in the `intent` field."
+        "parameter is not relevant to the chosen analysis, omit it. If the question "
+        "cannot be answered by any of the approved analyses — it is off-topic or "
+        "outside this ad-measurement warehouse — set analysis_type to \"unsupported\" "
+        "rather than forcing an unrelated analysis. Restate the user's intent in one "
+        "plain sentence in the `intent` field."
     )
     try:
         resp = _client().chat.completions.create(
