@@ -24,7 +24,8 @@ from src import db  # noqa: E402
 db.ensure_built()
 
 pages = st.navigation([
-    st.Page("app_pages/overview.py", title="Platform Overview", icon="📈", default=True),
+    st.Page("app_pages/welcome.py", title="Welcome", icon="👋", default=True),
+    st.Page("app_pages/overview.py", title="Platform Overview", icon="📈"),
     st.Page("app_pages/inventory.py", title="Inventory & Demand", icon="🎟️"),
     st.Page("app_pages/incrementality.py", title="Incrementality & Elasticity", icon="🧪"),
     st.Page("app_pages/ab_testing.py", title="A/B Testing", icon="⚖️"),
