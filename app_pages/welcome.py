@@ -15,17 +15,11 @@ ui.page_header(
     "Ads Measurement DSE role.")
 
 st.markdown(
-    "<div style='border-left:3px solid #E50914; padding:0.2rem 0 0.2rem 1rem; "
-    "color:#c3c2b7; font-size:1.02rem; line-height:1.6;'>"
     "I write this as a man in progress; I am still reading, still experimenting, "
     "still growing. I will at times come up short and will take those opportunities "
     "to improve. I have pushed the limits of the start-up organizations that I have "
     "been a part of. I submit this application hoping to join a world-class team, "
-    "because I am ready to contribute to world-class ideas."
-    "</div>",
-    unsafe_allow_html=True)
-
-st.markdown(
+    "because I am ready to contribute to world-class ideas.\n\n"
     "This web app expresses a portion of the knowledge that I have gained, concepts "
     "that I have implemented, and positions that I currently hold — and connects these "
     "to my inferences about the responsibilities of the **Analytics Engineer 5 — Ads "
@@ -48,8 +42,9 @@ st.markdown(
     "parameters (e.g. date range, entity selection).\n"
     "4. **Result(s) returned in statistical terms.**\n"
     "5. **LLM summarization** of the returned results.")
-st.info("You can see a mock-up of this in the **AI Analyst** pane of the app "
-        "(not connected to an LLM backend).", icon="🤖")
+st.info("You can see this flow live in the **AI Analyst** pane of the app — an LLM "
+        "handles only intent resolution (stage 2) and summarization (stage 5), while "
+        "every SQL query and statistic in between is codified and reviewable.", icon="🤖")
 
 st.divider()
 
