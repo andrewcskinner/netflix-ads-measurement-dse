@@ -28,6 +28,11 @@ from src import analytics, db, theme
 
 TOOL_NAME = "run_measurement_analysis"
 
+# Sentinel analysis_type the semantic layer selects when a question maps to
+# none of the approved analyses. It is NOT a runnable analysis — the page must
+# surface it and stop, rather than force an unrelated readout.
+UNSUPPORTED = "unsupported"
+
 
 @dataclass
 class Result:
@@ -49,8 +54,15 @@ class Analysis:
     label: str
     description: str                    # shown to the LLM and the user
     params: list[str]                   # names of params this analysis reads
-    example: str                        # a sample question
+    example: str                        # sample question; may contain "{entity}"
     run: object = field(repr=False)     # callable(enums, **params) -> Result
+    # Data-driven examples: example_pool() returns the entities that actually
+    # have data for THIS analysis (advertisers with an A/B test, well-powered
+    # advertisers, categories with a fittable curve, …). example_for() fills the
+    # "{entity}" slot with example_preferred when it's in the pool, else the top
+    # entity in the pool — so a starter prompt never points at empty data.
+    example_pool: object = field(default=None, repr=False)  # callable() -> list[str] | None
+    example_preferred: str | None = None
 
 
 # ---------------------------------------------------------------- enums
@@ -394,6 +406,45 @@ def run_cohort_recommendation(enums, advertiser_name=None, **_) -> Result:
                   table=table, table_config=cfg, figure=fig, notes=notes)
 
 
+# ---------------------------------------------------------------- example pools
+# Each returns the entities that genuinely have data for a given analysis, most
+# compelling first, so the starter prompts are always answerable.
+
+def _advertisers_with_ab_tests() -> list[str]:
+    ab = db.run_sql("ab_results")
+    tests = ab.groupby("test_id").apply(_arm_stats, include_groups=False).reset_index()
+    return tests.sort_values("p").advertiser.unique().tolist()   # most conclusive first
+
+
+def _well_powered_advertisers() -> list[str]:
+    wp = _wp_lift()
+    return wp.sort_values("n_treated", ascending=False).advertiser_name.unique().tolist()
+
+
+def _fittable_categories() -> list[str]:
+    freq = db.run_sql("frequency_response")
+    counts = freq.groupby("category").pairs.sum().sort_values(ascending=False)
+    return counts.index.tolist()                                # best-powered first
+
+
+def _all_advertisers() -> list[str]:
+    return db.run_sql("advertiser_summary").advertiser_name.tolist()
+
+
+def example_for(a: Analysis, enums: dict | None = None) -> str:
+    """Concrete starter question for `a`, with any "{entity}" slot filled by a
+    live entity that has data for this analysis. Falls back to the preferred
+    entity if the pool can't be read, so the page always renders something."""
+    if a.example_pool is None:
+        return a.example
+    try:
+        pool = a.example_pool()
+    except Exception:
+        pool = []
+    entity = pool[0] if (pool and a.example_preferred not in pool) else a.example_preferred
+    return a.example.format(entity=entity)
+
+
 # ---------------------------------------------------------------- registry
 
 def _st():
@@ -408,7 +459,8 @@ ANALYSES: dict[str, Analysis] = {
                  "holdout-measured lift with a 95% CI, p-value, and the probability the "
                  "true lift is positive. Optional param: advertiser_name.",
                  ["advertiser_name"],
-                 "Is Coca-Cola's advertising actually working?", run_incrementality),
+                 "Is {entity}'s advertising actually working?", run_incrementality,
+                 example_pool=_well_powered_advertisers, example_preferred="Coca-Cola"),
         Analysis("inventory_demand", "Inventory demand & sell-through",
                  "Where is ad demand strongest and which inventory is undersold? Returns "
                  "sell-through, clearing price (eCPM), and unfilled slots by cohort. "
@@ -421,20 +473,23 @@ ANALYSES: dict[str, Analysis] = {
                  "saturate? Fits the incremental-lift-by-frequency curve and reports the "
                  "half-saturation frequency. Optional param: category.",
                  ["category"],
-                 "How many times should we show a Finance ad before it stops paying off?",
-                 run_frequency_elasticity),
+                 "How many times should we show a {entity} ad before it stops paying off?",
+                 run_frequency_elasticity,
+                 example_pool=_fittable_categories, example_preferred="Finance"),
         Analysis("ab_test", "Creative A/B test readout",
                  "Which creative won a head-to-head A/B test? Returns per-arm rates, the "
                  "delta, a two-proportion p-value, and a ship recommendation. Optional "
                  "param: advertiser_name.",
                  ["advertiser_name"],
-                 "Which creative won for DoorDash?", run_ab_test),
+                 "Which creative won for {entity}?", run_ab_test,
+                 example_pool=_advertisers_with_ab_tests, example_preferred="DoorDash"),
         Analysis("cohort_recommendation", "Cohort buy recommendation",
                  "Which cohorts should an advertiser buy? Ranks cohorts by incremental "
                  "conversions per media dollar (holdout-measured, shrunk) scaled by "
                  "availability. Optional param: advertiser_name.",
                  ["advertiser_name"],
-                 "Where should PlayStation spend its next $10k?", run_cohort_recommendation),
+                 "Where should {entity} spend its next $10k?", run_cohort_recommendation,
+                 example_pool=_all_advertisers, example_preferred="PlayStation"),
     ]
 }
 
@@ -450,12 +505,18 @@ def build_tool_schema(enums: dict) -> dict:
         "function": {
             "name": TOOL_NAME,
             "description": ("Route the question to exactly one approved analysis and select "
-                            "its parameters. Analyses: " + analysis_lines),
+                            "its parameters. If the question maps to NONE of the approved "
+                            "analyses, set analysis_type to \"unsupported\" instead of forcing "
+                            "an unrelated one. Analyses: " + analysis_lines),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "analysis_type": {"type": "string", "enum": list(ANALYSES.keys()),
-                                      "description": "Which approved analysis to run."},
+                    "analysis_type": {"type": "string",
+                                      "enum": list(ANALYSES.keys()) + [UNSUPPORTED],
+                                      "description": "Which approved analysis to run, or "
+                                      "\"unsupported\" when the question cannot be answered by "
+                                      "any of them (out of scope for this measurement "
+                                      "warehouse). Never force an unrelated analysis."},
                     "advertiser_name": {"type": "string", "enum": enums["advertiser_name"],
                                         "description": "Advertiser filter, when the question "
                                         "names one (incrementality, ab_test, "
@@ -494,20 +555,28 @@ _KEYWORDS = [
 
 def resolve_deterministic(query: str, enums: dict) -> dict:
     """Keyword router used when no LLM is configured. Same output shape as the
-    LLM path: {analysis_type, <params>, intent}."""
+    LLM path: {analysis_type, <params>, intent}. When nothing about the question
+    looks like this warehouse — no analysis keyword, no known entity, no metric
+    hint — it returns analysis_type=UNSUPPORTED so the page can decline rather
+    than default to an unrelated readout."""
     q = query.lower()
-    analysis = "incrementality"
+    analysis = None
     for key, kws in _KEYWORDS:
         if any(kw in q for kw in kws):
             analysis = key
             break
-    args = {"analysis_type": analysis,
+    args = {"analysis_type": analysis or "incrementality",
             "intent": f"(offline keyword match) {query.strip()}"}
+    matched_entity = False
     for name in ("advertiser_name", "category", "cohort_name"):
         for val in enums[name]:
             if val.lower() in q:
                 args[name] = val
+                matched_entity = True
                 break
-    if "price" in q or "ecpm" in q:
+    metric_hint = "price" in q or "ecpm" in q
+    if metric_hint:
         args["metric"] = "clearing_price"
+    if analysis is None and not matched_entity and not metric_hint:
+        args["analysis_type"] = UNSUPPORTED
     return args

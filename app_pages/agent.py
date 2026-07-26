@@ -17,6 +17,7 @@ keyword router + templated summary, with a banner saying so — so the flow is
 legible even without a backend.
 """
 
+import hashlib
 import json
 
 import streamlit as st
@@ -76,8 +77,9 @@ st.markdown("**Try an example, or ask your own:**")
 ex_cols = st.columns(len(reg.ANALYSES))
 for col, a in zip(ex_cols, reg.ANALYSES.values()):
     with col:
-        if st.button(a.example, use_container_width=True, key=f"ex_{a.key}"):
-            st.session_state.agent_query = a.example
+        example = reg.example_for(a, enums)   # entity filled from live data
+        if st.button(example, use_container_width=True, key=f"ex_{a.key}"):
+            st.session_state.agent_query = example
             st.rerun()
 
 with st.form("ask"):
@@ -99,12 +101,26 @@ def execute(query: str) -> dict:
     args, mode, err = None, "offline", None
     if use_llm:
         r = llm.resolve_intent(query, schema)
-        if r["ok"] and r["args"].get("analysis_type") in reg.ANALYSES:
-            args, mode = r["args"], "llm"
+        if r["ok"]:
+            at = r["args"].get("analysis_type")
+            if at in reg.ANALYSES:
+                args, mode = r["args"], "llm"
+            elif at == reg.UNSUPPORTED:
+                # The model deliberately declined — surface it, don't run anything.
+                out.update(resolve=r["args"], resolve_mode="llm",
+                           resolve_error=None, unresolved=True)
+                return out
+            else:
+                err = "the model did not return a valid analysis"
         else:
-            err = r.get("error") or "the model did not return a valid analysis"
+            err = r.get("error")
     if args is None:
         args = reg.resolve_deterministic(query, enums)
+        mode = "offline"
+        if args["analysis_type"] == reg.UNSUPPORTED:
+            out.update(resolve=args, resolve_mode="offline",
+                       resolve_error=err, unresolved=True)
+            return out
     out.update(resolve=args, resolve_mode=mode, resolve_error=err)
 
     analysis = reg.ANALYSES[args["analysis_type"]]
@@ -144,6 +160,34 @@ def mode_chip(mode: str) -> str:
             f"◆ offline fallback</span>")
 
 
+# ------------------------------------------------- unsupported-query hand-off
+# When the semantic layer declines a question, it's really a feature request:
+# codify a new approved analysis. We turn that into an Analytics Engineering
+# ticket. (Demo stub — captured in session_state, not posted to a live Jira.)
+
+def _ticket_payload(query: str, resolve: dict) -> dict:
+    return {
+        "project": "ANALYTICS",
+        "issuetype": "New Measurement Analysis",
+        "summary": f"Codify an approved analysis for: “{query.strip()}”",
+        "components": ["Analytics Engineering", "AI Analyst"],
+        "labels": ["ai-analyst", "unsupported-query", "semantic-layer"],
+        "description": (
+            "The AI Analyst semantic layer could not map this request to any of the "
+            f"{len(reg.ANALYSES)} approved analyses and declined to run one.\n\n"
+            f"Original question: {query.strip()}\n"
+            f"Resolved intent: {resolve.get('intent', '—')}\n\n"
+            "Action: assess whether this warrants a new codified analysis "
+            "(named SQL + vetted Python + typed parameters) in the approved registry."),
+    }
+
+
+def _file_analytics_ticket(query: str, resolve: dict) -> dict:
+    payload = _ticket_payload(query, resolve)
+    n = int(hashlib.sha1(query.strip().lower().encode()).hexdigest(), 16) % 9000 + 1000
+    return {"key": f"ANALYTICS-{n}", "summary": payload["summary"], "payload": payload}
+
+
 if active_query:
     runs = st.session_state.setdefault("agent_runs", {})
     cache_key = f"{active_query}|{'llm' if use_llm else 'offline'}"
@@ -151,8 +195,6 @@ if active_query:
         with st.spinner("Resolving intent → running approved analysis → summarizing…"):
             runs[cache_key] = execute(active_query)
     r = runs[cache_key]
-    res = r["result"]
-    analysis = r["analysis"]
     args = r["resolve"]
 
     st.divider()
@@ -167,6 +209,44 @@ if active_query:
     st.write("")
     stage_header(2, "Semantic layer → intent, analysis type, parameters")
     st.markdown(mode_chip(r["resolve_mode"]), unsafe_allow_html=True)
+
+    # The semantic layer can decline: if the question maps to none of the
+    # approved analyses, we stop here rather than force an unrelated readout.
+    if r.get("unresolved"):
+        st.error(
+            "**Out of scope — this question doesn't map to any approved analysis.**  \n"
+            f"“{r['query']}” couldn't be resolved to one of the "
+            f"{len(reg.ANALYSES)} measurement analyses this agent is allowed to run, so "
+            "nothing was executed. This is the semantic layer working as intended: it "
+            "only proceeds when it can ground a question in a pre-approved analysis.")
+        st.caption("The semantic layer returned `analysis_type = \"unsupported\"` instead of "
+                   "picking an analysis, so stages 3–5 were skipped.")
+        st.markdown("**Try one of these instead:**")
+        for a in reg.ANALYSES.values():
+            st.markdown(f"- {reg.example_for(a, enums)}  ·  _{a.label}_")
+
+        st.write("")
+        st.markdown("**Need this analysis?** Hand it to Analytics Engineering to codify as a "
+                    "new approved analysis — that's how the menu grows.")
+        tickets = st.session_state.setdefault("agent_tickets", {})
+        filed = tickets.get(r["query"])
+        if filed:
+            st.success(f"✅ Filed **{filed['key']}** — “{filed['summary']}” is queued for "
+                       "Analytics Engineering.")
+        else:
+            if st.button("🎫 Open a Jira ticket for Analytics Engineering",
+                         type="primary", key="jira_unresolved"):
+                tickets[r["query"]] = _file_analytics_ticket(r["query"], r["resolve"])
+                st.rerun()
+            with st.expander("What gets sent to Analytics Engineering"):
+                st.code(json.dumps(_ticket_payload(r["query"], r["resolve"]), indent=2),
+                        language="json")
+        st.caption("Demo stub — in this synthetic app the ticket is captured locally, not "
+                   "posted to a live Jira project.")
+        st.stop()
+
+    res = r["result"]
+    analysis = r["analysis"]
     if r.get("resolve_error"):
         st.warning(f"LLM routing failed ({r['resolve_error']}); fell back to the keyword router.")
     c1, c2 = st.columns([1, 1])
