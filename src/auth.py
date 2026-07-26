@@ -12,7 +12,7 @@ import streamlit as st
 
 _DEFAULT_USER = "netflix"
 # sha256 of the demo password (shared out-of-band).
-_DEFAULT_HASH = "43ef1ceaf98623b82420b5eabc1c9a5ffec119343d8e17c67260421c367dde5a"
+_DEFAULT_HASH = "944f69b67be7a4d2111a6a6187ab3348d22486457c11a05e714b879e2ba6249e"
 
 
 def _expected() -> tuple[str, str]:
