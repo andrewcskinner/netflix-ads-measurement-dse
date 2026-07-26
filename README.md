@@ -49,10 +49,11 @@ streamlit run streamlit_app.py
 
 First boot generates the DuckDB warehouse (~20s), then everything is cached.
 
-**Auth:** the app is gated by a username/password. Credentials are shared
-out-of-band; to set your own, copy `.streamlit/secrets.toml.example` to
+**Auth:** the app is gated by a username/password. No password is stored in the
+repo — credentials are **required** from Streamlit secrets, and sign-in is
+disabled until they're set. Copy `.streamlit/secrets.toml.example` to
 `.streamlit/secrets.toml` (or paste into the Streamlit Cloud Secrets UI) with
-`AUTH_USERNAME` and `AUTH_PASSWORD_SHA256`.
+`AUTH_USERNAME` and `AUTH_PASSWORD_SHA256` (a SHA-256 hash of your password).
 
 **AI Analyst (optional LLM):** the **AI Analyst** page uses OpenAI for the
 semantic-layer routing and the summary. Add `OPENAI_API_KEY` (and optionally
@@ -67,7 +68,7 @@ parameters and writes prose; it never generates SQL or Python.
 1. Push this repo to GitHub.
 2. At [share.streamlit.io](https://share.streamlit.io) → New app → pick this
    repo/branch, main file `streamlit_app.py`.
-3. (Optional) add secrets to rotate the login.
+3. Add secrets (`AUTH_USERNAME`, `AUTH_PASSWORD_SHA256`) to enable the login.
 4. Share the URL + credentials.
 
 ## Honest limitations
