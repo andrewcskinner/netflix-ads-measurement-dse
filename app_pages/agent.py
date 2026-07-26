@@ -17,6 +17,7 @@ keyword router + templated summary, with a banner saying so — so the flow is
 legible even without a backend.
 """
 
+import hashlib
 import json
 
 import streamlit as st
@@ -159,6 +160,34 @@ def mode_chip(mode: str) -> str:
             f"◆ offline fallback</span>")
 
 
+# ------------------------------------------------- unsupported-query hand-off
+# When the semantic layer declines a question, it's really a feature request:
+# codify a new approved analysis. We turn that into an Analytics Engineering
+# ticket. (Demo stub — captured in session_state, not posted to a live Jira.)
+
+def _ticket_payload(query: str, resolve: dict) -> dict:
+    return {
+        "project": "ANALYTICS",
+        "issuetype": "New Measurement Analysis",
+        "summary": f"Codify an approved analysis for: “{query.strip()}”",
+        "components": ["Analytics Engineering", "AI Analyst"],
+        "labels": ["ai-analyst", "unsupported-query", "semantic-layer"],
+        "description": (
+            "The AI Analyst semantic layer could not map this request to any of the "
+            f"{len(reg.ANALYSES)} approved analyses and declined to run one.\n\n"
+            f"Original question: {query.strip()}\n"
+            f"Resolved intent: {resolve.get('intent', '—')}\n\n"
+            "Action: assess whether this warrants a new codified analysis "
+            "(named SQL + vetted Python + typed parameters) in the approved registry."),
+    }
+
+
+def _file_analytics_ticket(query: str, resolve: dict) -> dict:
+    payload = _ticket_payload(query, resolve)
+    n = int(hashlib.sha1(query.strip().lower().encode()).hexdigest(), 16) % 9000 + 1000
+    return {"key": f"ANALYTICS-{n}", "summary": payload["summary"], "payload": payload}
+
+
 if active_query:
     runs = st.session_state.setdefault("agent_runs", {})
     cache_key = f"{active_query}|{'llm' if use_llm else 'offline'}"
@@ -195,6 +224,25 @@ if active_query:
         st.markdown("**Try one of these instead:**")
         for a in reg.ANALYSES.values():
             st.markdown(f"- {reg.example_for(a, enums)}  ·  _{a.label}_")
+
+        st.write("")
+        st.markdown("**Need this analysis?** Hand it to Analytics Engineering to codify as a "
+                    "new approved analysis — that's how the menu grows.")
+        tickets = st.session_state.setdefault("agent_tickets", {})
+        filed = tickets.get(r["query"])
+        if filed:
+            st.success(f"✅ Filed **{filed['key']}** — “{filed['summary']}” is queued for "
+                       "Analytics Engineering.")
+        else:
+            if st.button("🎫 Open a Jira ticket for Analytics Engineering",
+                         type="primary", key="jira_unresolved"):
+                tickets[r["query"]] = _file_analytics_ticket(r["query"], r["resolve"])
+                st.rerun()
+            with st.expander("What gets sent to Analytics Engineering"):
+                st.code(json.dumps(_ticket_payload(r["query"], r["resolve"]), indent=2),
+                        language="json")
+        st.caption("Demo stub — in this synthetic app the ticket is captured locally, not "
+                   "posted to a live Jira project.")
         st.stop()
 
     res = r["result"]
